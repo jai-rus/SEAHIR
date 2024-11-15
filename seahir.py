@@ -15,6 +15,7 @@ class Person(core.Agent):
     """
     Person Agent with Susceptible, Exposed, Asymptomatic, Hospitalized, Infected, and Recovered States
     """
+    PERSON_TYPE = 1
     #Agent States
     SUSCEPTIBLE = 0
     EXPOSED = 1
@@ -24,7 +25,8 @@ class Person(core.Agent):
     REMOVED = 5
     RECOVERED = 6
         
-    def __init__(self, state=SUSCEPTIBLE):
+    def __init__(self, id, state=SUSCEPTIBLE):
+        super().__init__(id, Person.PERSON_TYPE)
         self.state = state
         self.days = 0 #How many days the person has been in their current state
 
@@ -111,29 +113,40 @@ class Model:
     ISOLATED: int = 0
     REMOVED: int = 0
     RECOVERED: int = 0
-    def __init__(self, populationSize):
-        self.population = [Person() for _ in range(populationSize)]
+
+    def __init__(self, comm, populationSize):
+        self.context = ctx.SharedContext(comm)
+        self.schedule = schedule.Schedule()
+        self.populationSize = populationSize
         self.time = 0
+        self.init_population()
+
+    def init_population(self):
+        for i in range(self.populationSize):
+            person = Person(i)
+            self.context.add(person)
+        self.schedule.schedule_repeating_event(1, 1, self.step)
 
     def step(self):
-        for person in self.population:
-            person.step()
-    
+        for agent in self.context.agents():
+            agent.step()
+
+    def run(self, time):
+        for t in range(time):
+            self.schedule.execute()
+            counts = self.counts()
+            print(f"Day {t + 1}: {counts}")
+
     def counts(self):
         counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
-        for person in self.population:
+        for person in self.context.agents():
             counts[person.state] += 1
         return counts
 
 def main():
-    populationSize = 20000
-    model = Model(populationSize)
-    time = 30
-
-    for t in range(time):
-        model.step()
-        counts = model.counts()
-        print(f"Day {t + 1}: {counts}")
+    comm = MPI.COMM_WORLD
+    model = Model(comm, 1000)
+    model.run(time=30)
 
 if __name__ == "__main__":
     main()
