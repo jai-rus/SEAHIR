@@ -10,10 +10,11 @@ from repast4py import context as ctx
 from repast4py.network import UndirectedSharedNetwork
 from repast4py.parameters import create_args_parser, init_params
 import networkx as nx
+import random
 
 class Person(core.Agent):
     """
-    Person Agent with Susceptible, Exposed, Asymptomatic, Hospitalized, Infected, and Recovered States
+    Person Agent with Susceptible, Exposed, Asymptomatic, Hospitalized, Infected, and Recovered States. Also has a daily routine
     """
     PERSON_TYPE = 1
     #Agent States
@@ -29,6 +30,8 @@ class Person(core.Agent):
         super().__init__(id, Person.PERSON_TYPE)
         self.state = state
         self.days = 0 #How many days the person has been in their current state
+        self.location = "home"
+        self.occupation = random.choice(["worker", "student", "unemployed"]) #randomly assigned an occupation
 
     def step(self):
         self.days += 1
@@ -104,6 +107,23 @@ class Person(core.Agent):
         """Person has recovered and is removed"""
         #TODO Finish Function
 
+    def go_to_work(self):
+        """Agent will be at location work"""
+        if self.occupation == "worker" and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
+            self.location = "work"
+            print(f"Agent {self.id} is at work")
+
+    def go_to_school(self):
+        """Agent will be at location school"""
+        if self.occupation == "student" and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
+            self.location = "school"
+            print(f"Agent {self.id} is at school")
+
+    def stay_home(self):
+        """Agent stayed home"""
+        self.location = "home"
+        print(f"Agent {self.id} is staying home")
+
 class Model:
     """Model Class"""
     SUSCEPTIBLE: int = 0
@@ -125,17 +145,40 @@ class Model:
         for i in range(self.populationSize):
             person = Person(i)
             self.context.add(person)
+        #Schedule for daily step
         self.schedule.schedule_repeating_event(0, 1, self.step)
 
+        #Schedule for activites
+        self.schedule.schedule_repeating_event(9, 24, self.run_work) #work at 9am every 24 hrs
+        self.schedule.schedule_repeating_event(8, 24, self.run_school) #school at 8 am every 24 hrs
+        self.schedule.schedule_repeating_event(18, 24, self.run_home) #Return home at 6 pm every 24 hours
+
     def step(self):
+        """Daily Progression"""
         for agent in self.context.agents():
             agent.step()
+    
+    def run_work(self):
+        """Moves agents to work"""
+        for agent in self.context.agents():
+            agent.go_to_work()
+    
+    def run_school(self):
+        """Moves agents to school"""
+        for agent in self.context.agents():
+            agent.go_to_school()
+    
+    def run_home(self):
+        """Moves agents to home"""
+        for agent in self.context.agents():
+            agent.stay_home()
 
-    def run(self, time):
-        for t in range(time):
-            self.schedule.execute()
+    def run(self, days):
+        for day in range(days):
+            for hour in range(24):
+                self.schedule.execute()
             counts = self.counts()
-            print(f"Day {t + 1}: {counts}")
+            print(f"Day {day + 1}: {counts}")
 
     def counts(self):
         counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
