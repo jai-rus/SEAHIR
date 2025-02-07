@@ -125,7 +125,7 @@ class Model:
         for i in range(self.populationSize):
             person = Person(i)
             self.context.add(person)
-        self.schedule.schedule_repeating_event(1, 1, self.step)
+        self.schedule.schedule_repeating_event(0, 1, self.step)
 
     def step(self):
         for agent in self.context.agents():
@@ -145,7 +145,7 @@ class Model:
 
 def main():
     comm = MPI.COMM_WORLD
-    model = Model(comm, 1000)
+    model = Model(comm, 20000)
     model.run(time=30)
 
 if __name__ == "__main__":
