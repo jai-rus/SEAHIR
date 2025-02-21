@@ -31,7 +31,10 @@ class Person(core.Agent):
         self.state = state
         self.days = 0 #How many days the person has been in their current state
         self.location = "home"
-        self.occupation = random.choice(["worker", "student", "unemployed"]) #randomly assigned an occupation
+        occupations = ["worker", "student", "unemployed"]
+        proportions = [0.5, 0.3, 0.2]
+        self.occupation = random.choices(occupations, proportions)[0] #randomly assigned an occupation
+        print(f"Agent #{self.id} is a {self.occupation}")
 
     def step(self):
         self.days += 1
@@ -68,10 +71,13 @@ class Person(core.Agent):
 
         if chance < asympRate:
             self.state = self.ASYMPTOMATIC
+            print(f"Agent {self.id} is asymp")
         elif chance < asympRate + isolateRate:
             self.state = self.ISOLATED
+            print(f"Agent {self.id} is isolated")
         else:
             self.state = self.HOSPITALIZED
+            print(f"Agent {self.id} is hospitalized")
     
 
     def asymp(self):
@@ -109,20 +115,20 @@ class Person(core.Agent):
 
     def go_to_work(self):
         """Agent will be at location work"""
-        if self.occupation == "worker" and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
+        if self.occupation == "worker": #and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
             self.location = "work"
-            print(f"Agent {self.id} is at work")
+            #print(f"Agent {self.id} is at work")
 
     def go_to_school(self):
         """Agent will be at location school"""
-        if self.occupation == "student" and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
+        if self.occupation == "student": #and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
             self.location = "school"
-            print(f"Agent {self.id} is at school")
+            #print(f"Agent {self.id} is at school")
 
     def stay_home(self):
         """Agent stayed home"""
         self.location = "home"
-        print(f"Agent {self.id} is staying home")
+        #print(f"Agent {self.id} is staying home")
 
 class Model:
     """Model Class"""
@@ -157,6 +163,7 @@ class Model:
         """Daily Progression"""
         for agent in self.context.agents():
             agent.step()
+            print(f"Agent {agent.id} is currently at {agent.location}")
     
     def run_work(self):
         """Moves agents to work"""
@@ -176,9 +183,11 @@ class Model:
     def run(self, days):
         for day in range(days):
             for hour in range(24):
+                print(f"--- Day {day + 1}, Hour {hour}: ---")
                 self.schedule.execute()
             counts = self.counts()
             print(f"Day {day + 1}: {counts}")
+            #print(f"End of Day {day + 1}")
 
     def counts(self):
         counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
@@ -188,8 +197,8 @@ class Model:
 
 def main():
     comm = MPI.COMM_WORLD
-    model = Model(comm, 20000)
-    model.run(time=30)
+    model = Model(comm, 5)
+    model.run(days=3)
 
 if __name__ == "__main__":
     main()
