@@ -11,193 +11,175 @@ from repast4py.network import UndirectedSharedNetwork
 from repast4py.parameters import create_args_parser, init_params
 import networkx as nx
 import random
+import csv
+
+random.seed(42)  # Set a random seed for reproducibility
+
+class Agent:
+    def __init__(self, node_id):
+        self.id = node_id
+        self.local_rank = None  # To be set based on the rank
+
+    def set_local_rank(self, rank):
+        self.local_rank = rank
 
 class Person(core.Agent):
-    """
-    Person Agent with Susceptible, Exposed, Asymptomatic, Hospitalized, Infected, and Recovered States. Also has a daily routine
-    """
     PERSON_TYPE = 1
-    #Agent States
     SUSCEPTIBLE = 0
     EXPOSED = 1
-    ASYMPTOMATIC = 2 #Asymp
-    HOSPITALIZED = 3 #Moderate/Severe Cases
-    ISOLATED = 4 #Mild Cases
+    ASYMPTOMATIC = 2
+    HOSPITALIZED = 3
+    ISOLATED = 4
     REMOVED = 5
     RECOVERED = 6
-        
-    def __init__(self, id, state=SUSCEPTIBLE):
+
+    def __init__(self, id, local_rank, state=SUSCEPTIBLE):
         super().__init__(id, Person.PERSON_TYPE)
         self.state = state
-        self.days = 0 #How many days the person has been in their current state
+        print(state)
+        self.days = 0
         self.location = "home"
+        self.local_rank = local_rank
         occupations = ["worker", "student", "unemployed"]
         proportions = [0.5, 0.3, 0.2]
-        self.occupation = random.choices(occupations, proportions)[0] #randomly assigned an occupation
-        print(f"Agent #{self.id} is a {self.occupation}")
+        self.occupation = random.choices(occupations, proportions)[0]
 
     def step(self):
         self.days += 1
-
         if self.state == self.SUSCEPTIBLE:
+            print(f"Agent {self.id} is SUSCEPTIBLE")
             self.expose()
         elif self.state == self.EXPOSED:
-            #Decides what case they are
+            print(f"Agent {self.id} is EXPOSED")
             self.infected()
         elif self.state == self.ASYMPTOMATIC:
-            #Figure out what happens if their asymptomatic
+            print(f"Agent {self.id} is ASYMPTOMATIC")
             self.asymp()
         elif self.state == self.HOSPITALIZED:
-            #Maybe add a check to see how many hospital beds are being taken up and if they die
+            print(f"Agent {self.id} is HOSPITALIZED")
             self.hospital()
         elif self.state == self.ISOLATED:
+            print(f"Agent {self.id} is ISOLATED")
             self.isolated()
         elif self.state == self.RECOVERED:
+            print(f"Agent {self.id} is RECOVERED")
             self.recover()
-    
+        elif self.state == self.REMOVED:
+            print(f"Agent {self.id} is REMOVED")
+
     def expose(self):
-        """Person goes from susceptible to exposed"""
-        infectionRate = 0.5
+        infectionRate = 0.1
         if random.random() > infectionRate:
             self.state = self.EXPOSED
             self.days = 0
-    
-    def infected(self):
-        """Person goes from exposed to either asymptomatic, isolate, or hospitalized"""
-        asympRate = 0.3
-        isolateRate = 0.55
-        #hospitalizedRate = 0.15
-        chance = random.random()
 
+    def infected(self):
+        asympRate = 0.5  # Increased chance of becoming ASYMPTOMATIC
+        isolateRate = 0.3  # Reduced chance of becoming ISOLATED
+        hospitalRate = 0.2  # Added to ensure probabilities sum to 1.0
+        chance = random.random()
         if chance < asympRate:
             self.state = self.ASYMPTOMATIC
-            print(f"Agent {self.id} is asymp")
         elif chance < asympRate + isolateRate:
             self.state = self.ISOLATED
-            print(f"Agent {self.id} is isolated")
         else:
             self.state = self.HOSPITALIZED
-            print(f"Agent {self.id} is hospitalized")
-    
 
     def asymp(self):
-        """Person is asymptomatic and can infect others"""
         if self.days == 5:
             self.state = self.RECOVERED
 
-    #Maybe split people who are hospitalized into ICU and Hospitalization
     def hospital(self):
-        """Person is currently hospitalized and can either die or recover"""
         deathRateHospitalization = 0.18
-        #deathRateICU = 0.44
         daysInHospital = 18
-        chance = random.random()
-
-        if chance < deathRateHospitalization:
-            self.state = self.REMOVED
-        elif self.days >= daysInHospital:
-            self.state = self.RECOVERED
-
+        if self.days >= daysInHospital:  # Check minimum days first
+            if random.random() < deathRateHospitalization:
+                self.state = self.REMOVED
+            else:
+                self.state = self.RECOVERED
 
     def isolated(self):
-        """Person is currently isolating and has the chance to recover or become hospitalized"""
         hospitalizedRate = 0.15
-        chance = random.random()
-
-        if chance < hospitalizedRate:
-            self.state = self.HOSPITALIZED
-        elif self.days == 14:
-            self.state = self.RECOVERED
-
+        if self.days >= 14:  # Check minimum days first
+            if random.random() < hospitalizedRate:
+                self.state = self.HOSPITALIZED
+            else:
+                self.state = self.RECOVERED
     def recover(self):
-        """Person has recovered and is removed"""
-        #TODO Finish Function
-
-    def go_to_work(self):
-        """Agent will be at location work"""
-        if self.occupation == "worker": #and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
-            self.location = "work"
-            #print(f"Agent {self.id} is at work")
-
-    def go_to_school(self):
-        """Agent will be at location school"""
-        if self.occupation == "student": #and self.state in [self.SUSCEPTIBLE, self.ASYMPTOMATIC, self.RECOVERED]:
-            self.location = "school"
-            #print(f"Agent {self.id} is at school")
-
-    def stay_home(self):
-        """Agent stayed home"""
-        self.location = "home"
-        #print(f"Agent {self.id} is staying home")
+        pass
 
 class Model:
-    """Model Class"""
-    SUSCEPTIBLE: int = 0
-    EXPOSED: int = 0
-    ASYMPTOMATIC: int = 0 
-    HOSPITALIZED: int = 0 
-    ISOLATED: int = 0
-    REMOVED: int = 0
-    RECOVERED: int = 0
-
-    def __init__(self, comm, populationSize):
+    def __init__(self, comm, populationSize, network_file):
         self.context = ctx.SharedContext(comm)
         self.schedule = schedule.Schedule()
         self.populationSize = populationSize
         self.time = 0
+        self.network = UndirectedSharedNetwork("contact_network", comm)
         self.init_population()
+        self.load_network_from_file(network_file)
 
     def init_population(self):
+        rank = self.context.comm.Get_rank()
         for i in range(self.populationSize):
-            person = Person(i)
+            person = Person(i, local_rank=rank, state=Person.SUSCEPTIBLE)
             self.context.add(person)
-        #Schedule for daily step
+            self.network.add_nodes([person])  # Add node for each person
         self.schedule.schedule_repeating_event(0, 1, self.step)
 
-        #Schedule for activites
-        self.schedule.schedule_repeating_event(9, 24, self.run_work) #work at 9am every 24 hrs
-        self.schedule.schedule_repeating_event(8, 24, self.run_school) #school at 8 am every 24 hrs
-        self.schedule.schedule_repeating_event(18, 24, self.run_home) #Return home at 6 pm every 24 hours
+    def load_network_from_file(self, filename):
+        rank = self.context.comm.Get_rank()  # Get the MPI rank of the current process
+        node_to_agent = {}  # Dictionary to map node IDs to Person objects
+
+        with open(filename, "r") as file:
+            reader = csv.reader(file)
+            next(reader)  # Skip the header row
+            
+            for row in reader:
+                node_id = int(row[0])  # Extract node ID
+                connections = list(map(int, row[2].strip('"').split(", ")))  # Parse connections
+                
+                # Ensure the node exists in the network
+                if node_id not in node_to_agent:
+                    # Create a new Person object for this node
+                    person = Person(node_id, local_rank=rank)  # Pass the MPI rank as local_rank
+                    self.context.add(person)
+                    self.network.add_nodes([person])  # Add the Person object to the network
+                    node_to_agent[node_id] = person  # Map node ID to Person object
+                
+                # Add edges for each connection
+                for neighbor in connections:
+                    if neighbor not in node_to_agent:
+                        # Create a new Person object for the neighbor
+                        neighbor_person = Person(neighbor, local_rank=rank)  # Pass the MPI rank as local_rank
+                        self.context.add(neighbor_person)
+                        self.network.add_nodes([neighbor_person])  # Add the Person object to the network
+                        node_to_agent[neighbor] = neighbor_person  # Map neighbor ID to Person object
+                    
+                    # Add the edge (if it doesn't already exist)
+                    if not self.network.graph.has_edge(node_to_agent[node_id], node_to_agent[neighbor]):
+                        self.network.add_edge(node_to_agent[node_id], node_to_agent[neighbor])
 
     def step(self):
-        """Daily Progression"""
         for agent in self.context.agents():
             agent.step()
-            print(f"Agent {agent.id} is currently at {agent.location}")
-    
-    def run_work(self):
-        """Moves agents to work"""
-        for agent in self.context.agents():
-            agent.go_to_work()
-    
-    def run_school(self):
-        """Moves agents to school"""
-        for agent in self.context.agents():
-            agent.go_to_school()
-    
-    def run_home(self):
-        """Moves agents to home"""
-        for agent in self.context.agents():
-            agent.stay_home()
 
     def run(self, days):
         for day in range(days):
             for hour in range(24):
-                print(f"--- Day {day + 1}, Hour {hour}: ---")
                 self.schedule.execute()
             counts = self.counts()
             print(f"Day {day + 1}: {counts}")
-            #print(f"End of Day {day + 1}")
 
     def counts(self):
-        counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
+        counts = {i: 0 for i in range(7)}
         for person in self.context.agents():
             counts[person.state] += 1
         return counts
 
 def main():
     comm = MPI.COMM_WORLD
-    model = Model(comm, 5)
+    network_file = "contact_network.txt"
+    model = Model(comm, 5, network_file)
     model.run(days=3)
 
 if __name__ == "__main__":
