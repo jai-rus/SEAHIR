@@ -46,6 +46,7 @@ class Person(core.Agent):
 
     def step(self):
         self.days += 1
+        print(f"Agent {self.id} is {self.state}")
         if self.state == self.SUSCEPTIBLE:
             print(f"Agent {self.id} is SUSCEPTIBLE")
             self.expose()
@@ -166,9 +167,20 @@ class Model:
     def run(self, days):
         for day in range(days):
             for hour in range(24):
-                self.schedule.execute()
+                self.update_locations(hour)  # Handle movement within the day
+            self.schedule.execute()  # Execute the step once per day
             counts = self.counts()
             print(f"Day {day + 1}: {counts}")
+
+    def update_locations(self, hour):
+        for person in self.context.agents():
+            if 8 <= hour < 17:  # Work/school hours (8 AM - 5 PM)
+                if person.occupation == "worker":
+                    person.location = "work"
+                elif person.occupation == "student":
+                    person.location = "school"
+            else:
+                person.location = "home"
 
     def counts(self):
         counts = {i: 0 for i in range(7)}
