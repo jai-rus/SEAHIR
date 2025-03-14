@@ -36,7 +36,7 @@ class Person(core.Agent):
     def __init__(self, id, local_rank, state=SUSCEPTIBLE):
         super().__init__(id, Person.PERSON_TYPE)
         self.state = state
-        print(state)
+        #print(state)
         self.days = 0
         self.location = "home"
         self.local_rank = local_rank
@@ -46,51 +46,62 @@ class Person(core.Agent):
 
     def step(self):
         self.days += 1
-        print(f"Agent {self.id} is {self.state}")
+
+        #print(f"Agent {self.id} is {self.state}")
         if self.state == self.SUSCEPTIBLE:
-            print(f"Agent {self.id} is SUSCEPTIBLE")
+            #print(f"Agent {self.id} is SUSCEPTIBLE")
             self.expose()
         elif self.state == self.EXPOSED:
-            print(f"Agent {self.id} is EXPOSED")
+            #print(f"Agent {self.id} is EXPOSED")
             self.infected()
         elif self.state == self.ASYMPTOMATIC:
-            print(f"Agent {self.id} is ASYMPTOMATIC")
+            #print(f"Agent {self.id} is ASYMPTOMATIC")
             self.asymp()
         elif self.state == self.HOSPITALIZED:
-            print(f"Agent {self.id} is HOSPITALIZED")
+            #print(f"Agent {self.id} is HOSPITALIZED")
             self.hospital()
         elif self.state == self.ISOLATED:
-            print(f"Agent {self.id} is ISOLATED")
+            #print(f"Agent {self.id} is ISOLATED")
             self.isolated()
         elif self.state == self.RECOVERED:
-            print(f"Agent {self.id} is RECOVERED")
+            #print(f"Agent {self.id} is RECOVERED")
             self.recover()
         elif self.state == self.REMOVED:
-            print(f"Agent {self.id} is REMOVED")
+            #print(f"Agent {self.id} is REMOVED")
+            self.recover()
 
     def expose(self):
-        infectionRate = 0.1
-        if random.random() > infectionRate:
-            self.state = self.EXPOSED
-            self.days = 0
+        """Person goes from susceptible to exposed"""
+        if self.days > 1:
+            infectionRate = 0.5
+            if random.random() > infectionRate:
+                self.state = self.EXPOSED
+                self.days = 0
 
     def infected(self):
-        asympRate = 0.5  # Increased chance of becoming ASYMPTOMATIC
-        isolateRate = 0.3  # Reduced chance of becoming ISOLATED
-        hospitalRate = 0.2  # Added to ensure probabilities sum to 1.0
+        """Person goes from exposed to either asymptomatic, isolate, or hospitalized"""
+        asympRate = 0.3  
+        isolateRate = 0.55  
+        hospitalRate = 0.15 
         chance = random.random()
+
         if chance < asympRate:
             self.state = self.ASYMPTOMATIC
+            #print(f"Agent {self.id} is asymp")
         elif chance < asympRate + isolateRate:
             self.state = self.ISOLATED
+            #print(f"Agent {self.id} is isolated")
         else:
             self.state = self.HOSPITALIZED
+            #print(f"Agent {self.id} is hospitalized")
 
     def asymp(self):
+        """Person is asymptomatic and can infect others"""
         if self.days == 5:
             self.state = self.RECOVERED
 
     def hospital(self):
+        """Person is currently hospitalized and can either die or recover"""
         deathRateHospitalization = 0.18
         daysInHospital = 18
         if self.days >= daysInHospital:  # Check minimum days first
@@ -100,12 +111,14 @@ class Person(core.Agent):
                 self.state = self.RECOVERED
 
     def isolated(self):
+        """Person is currently isolating and has the chance to recover or become hospitalized"""
         hospitalizedRate = 0.15
         if self.days >= 14:  # Check minimum days first
             if random.random() < hospitalizedRate:
                 self.state = self.HOSPITALIZED
             else:
                 self.state = self.RECOVERED
+
     def recover(self):
         pass
 
@@ -190,9 +203,9 @@ class Model:
 
 def main():
     comm = MPI.COMM_WORLD
-    network_file = "contact_network.txt"
-    model = Model(comm, 5, network_file)
-    model.run(days=3)
+    network_file = "network_output.csv"
+    model = Model(comm, 1000, network_file)
+    model.run(days=20)
 
 if __name__ == "__main__":
     main()
