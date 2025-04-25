@@ -27,10 +27,8 @@ class Person(core.Agent):
     PERSON_TYPE = 1
     SUSCEPTIBLE = 0
     EXPOSED = 1
-    ASYMPTOMATIC = 2
-    HOSPITALIZED = 3
-    ISOLATED = 4
-    REMOVED = 5
+    INFECTED = 2
+    REMOVED = 3
 
     def __init__(self, id, local_rank, context, network, state=SUSCEPTIBLE):
         super().__init__(id, Person.PERSON_TYPE)
@@ -59,16 +57,7 @@ class Person(core.Agent):
         elif self.state == self.EXPOSED:
             #print(f"Agent {self.id} is EXPOSED")
             self.infected()
-        elif self.state == self.ASYMPTOMATIC:
-            #print(f"Agent {self.id} is ASYMPTOMATIC")
-            self.asymp()
-        elif self.state == self.HOSPITALIZED:
-            #print(f"Agent {self.id} is HOSPITALIZED")
-            self.hospital()
-        elif self.state == self.ISOLATED:
-            #print(f"Agent {self.id} is ISOLATED")
-            self.isolated()
-        elif self.state == self.REMOVED:
+        elif self.state == self.INFECTED:
             #print(f"Agent {self.id} is REMOVED")
             self.remove()
 
@@ -80,13 +69,13 @@ class Person(core.Agent):
             contact_rate = self.calculate_contact_rate()
             infection_probability = beta_t * contact_rate
             
-            #Adjusts infection probability based on mask, if wearing mask reduce probability by 15%
-            #1 - 0.15
+            #Adjusts infection probability based on mask, if wearing mask reduce probability by 14%
+            #1 - 0.14
             if self.mask:
                 infection_probability *= 0.30
             
             #If infected neighbor is wearing a mask, reduce infection probability further
-            infectedNeighbors = [n for n in self.get_neighbors() if n.state in [self.ASYMPTOMATIC, self.EXPOSED]]
+            infectedNeighbors = [n for n in self.get_neighbors() if n.state in [self.INFECTED]]
 
             if infectedNeighbors:
                 maskReduction = sum (0.86 for n in infectedNeighbors if n.mask) / len(infectedNeighbors)
@@ -97,24 +86,24 @@ class Person(core.Agent):
                 self.days = 0
 
     def calculate_contact_rate(self):
-        #Base contact rate for random interactions initially 0.01
+        # Base contact rate for random interactions (e.g., in public spaces)
         base_contact_rate = 0.4
 
-        #Calculate the contact rate based on the number of infected neighbors
+        # Calculate the contact rate based on the number of infected neighbors
         infected_count = self.count_infected_neighbors()
-        neighbor_count = len(list(self.get_neighbors()))  #Count neighbors
+        neighbor_count = len(list(self.get_neighbors()))  # Count neighbors
 
         if neighbor_count == 0:
-            return base_contact_rate  #Return the base rate if no neighbors
+            return base_contact_rate  # Return the base rate if no neighbors
 
-        #Calculate the contact rate as a combination of base rate and network-based rate
+        # Calculate the contact rate as a combination of base rate and network-based rate
         network_contact_rate = infected_count / neighbor_count
-        scaling_factor = 1  #Adjust this to amplify the network-based rate 1.0
+        scaling_factor = 1  #Amplifies the network-based rate default 1
 
-        #Combine base rate and network-based rate
+        # Combine base rate and network-based rate
         total_contact_rate = base_contact_rate + (scaling_factor * network_contact_rate)
 
-        #Ensure the contact rate does not exceed 1
+        # Ensure the contact rate does not exceed 1
         return min(total_contact_rate, 1.0)
 
 
@@ -122,62 +111,36 @@ class Person(core.Agent):
         # Count the number of infected neighbors
         infected_count = 0
         for neighbor in self.get_neighbors():
-            if neighbor.location == self.location and neighbor.state in [self.ASYMPTOMATIC, self.HOSPITALIZED, self.ISOLATED]:
+            if neighbor.location == self.location and neighbor.state in [self.INFECTED]:
                 infected_count += 1
         return infected_count
 
     def get_neighbors(self):
-        #Get the neighbors of the current agent
+        # Get the neighbors of the current agent
         return self.network.graph.neighbors(self)
 
     def get_total_population(self):
-        #Get the total population size
+        # Get the total population size
         return self.context.size()
 
     def infected(self):
-        """Person goes from exposed to either asymptomatic, isolate, or hospitalized"""
+        """Person goes from exposed to infected after incubation period"""
         incubation = 5
-        if self.days_since_infected >= incubation:
-            asympRate = 0.3  
-            isolateRate = 0.55  
-            hospitalRate = 0.15 
-            chance = random.random()
-
-            if chance < asympRate:
-                self.state = self.ASYMPTOMATIC
-                #print(f"Agent {self.id} is asymp")
-            elif chance < asympRate + isolateRate:
-                self.state = self.ISOLATED
-                #print(f"Agent {self.id} is isolated")
-            else:
-                self.state = self.HOSPITALIZED
-                #print(f"Agent {self.id} is hospitalized")
+        if self.days_since_infected >= incubation and self.state == self.EXPOSED:
+            self.state = self.INFECTED
             self.days = 0
-            
-    def asymp(self):
-        """Person is asymptomatic and can infect others"""
-        if self.days >= 9:
-            self.state = self.REMOVED
-
-    def hospital(self):
-        """Person is currently hospitalized and can either die or recover"""
-        deathRateHospitalization = 0.18
-        daysInHospital = 18
-        if self.days >= daysInHospital:  # Check minimum days first
-            if random.random() < deathRateHospitalization:
-                self.state = self.REMOVED
-
-    def isolated(self):
-        """Person is currently isolating and has the chance to recover or become hospitalized"""
-        hospitalizedRate = 0.15
-        if self.days >= 14:  #Check minimum days first
-            if random.random() < hospitalizedRate:
-                self.state = self.HOSPITALIZED
-            else:
-                self.state = self.REMOVED
+            self.infectious = True
 
     def remove(self):
-        pass
+        """Person goes from infected to removed (recovered or deceased)"""
+        infectious_period = 10  # Average days infectious
+        mortality_rate = 0.02  # 2% chance of death
+        
+        if self.days >= infectious_period and self.state == self.INFECTED:
+            if random.random() < mortality_rate:
+                self.deceased = True
+            self.state = self.REMOVED
+            self.infectious = False
 
 class Model:
     def __init__(self, comm, populationSize, network_file):
@@ -202,35 +165,35 @@ class Model:
         self.schedule.schedule_repeating_event(0, 1, self.step)
 
     def load_network_from_file(self, filename):
-        rank = self.context.comm.Get_rank()  #Get the MPI rank of the current process
-        node_to_agent = {}  #Dictionary to map node IDs to Person objects
+        rank = self.context.comm.Get_rank()  # Get the MPI rank of the current process
+        node_to_agent = {}  # Dictionary to map node IDs to Person objects
 
         with open(filename, "r") as file:
             reader = csv.reader(file)
-            next(reader)  #Skip header
+            next(reader)  # Skip the header row
             
             for row in reader:
                 node_id = int(row[0])  # Extract node ID
-                connections = list(map(int, row[2].strip('"').split(", ")))  #Parse connections
+                connections = list(map(int, row[2].strip('"').split(", ")))  # Parse connections
                 
-                #Ensure the node exists in the network
+                # Ensure the node exists in the network
                 if node_id not in node_to_agent:
-                    #Create a new Person object for this node
+                    # Create a new Person object for this node
                     person = Person(node_id, local_rank=rank, context=self.context, network=self.network)  # Pass the MPI rank as local_rank
                     self.context.add(person)
-                    self.network.add_nodes([person])  #Add the Person object to the network
-                    node_to_agent[node_id] = person  #Map node ID to Person object
+                    self.network.add_nodes([person])  # Add the Person object to the network
+                    node_to_agent[node_id] = person  # Map node ID to Person object
                 
-                #Add edges for each connection
+                # Add edges for each connection
                 for neighbor in connections:
                     if neighbor not in node_to_agent:
-                        #Create a new Person object for the neighbor
+                        # Create a new Person object for the neighbor
                         neighbor_person = Person(neighbor, local_rank=rank, context=self.context, network=self.network)  # Pass the MPI rank as local_rank
                         self.context.add(neighbor_person)
-                        self.network.add_nodes([neighbor_person])  #Add the Person object to the network
-                        node_to_agent[neighbor] = neighbor_person  #Map neighbor ID to Person object
+                        self.network.add_nodes([neighbor_person])  # Add the Person object to the network
+                        node_to_agent[neighbor] = neighbor_person  # Map neighbor ID to Person object
                     
-                    #Add the edge (if it doesn't already exist)
+                    # Add the edge (if it doesn't already exist)
                     if not self.network.graph.has_edge(node_to_agent[node_id], node_to_agent[neighbor]):
                         self.network.add_edge(node_to_agent[node_id], node_to_agent[neighbor])
 
@@ -247,6 +210,7 @@ class Model:
             #print(f"Day {day + 1}: {counts}")
             print(f"{day + 1}: {counts},")
 
+    #TODO: Locations might be bugged, not changing infection rates
     def update_locations(self, hour):
         for person in self.context.agents():
             if 8 <= hour < 17:  # Work/school hours (8 AM - 5 PM)
@@ -260,7 +224,7 @@ class Model:
                 person.location = "home"
 
     def counts(self):
-        counts = {i: 0 for i in range(6)}
+        counts = {i: 0 for i in range(4)}
         for person in self.context.agents():
             counts[person.state] += 1
         return counts
