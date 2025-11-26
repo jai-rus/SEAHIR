@@ -37,7 +37,6 @@ class Person(core.Agent):
         self.state = state
         #print(state)
         self.days = 0 #Represents days in current state
-        self.days_since_infected = 0 #Represents days since infected
         self.location = "home"
         self.local_rank = local_rank
         occupations = ["worker", "student", "unemployed"]
@@ -48,8 +47,7 @@ class Person(core.Agent):
         self.network = network
 
     def step(self):
-        if self.state != self.SUSCEPTIBLE and self.state != self.REMOVED:
-            self.days_since_infected += 1  # Only increment if infected
+        # CHANGE 1: Simplified day counter - only use self.days
         self.days += 1
 
         #print(f"Agent {self.id} is {self.state}")
@@ -75,8 +73,8 @@ class Person(core.Agent):
     def expose(self):
         """Person goes from susceptible to exposed"""
         if self.days >= 0:
-            # Calculate the infection probability based on the equations
-            beta_t = 0.2 
+            # === TRANSMISSION PARAMETERS (Lines 68-70) ===
+            beta_t = 0.01  # Transmission rate per contact
             contact_rate = self.calculate_contact_rate()
             infection_probability = beta_t * contact_rate
             
@@ -97,8 +95,8 @@ class Person(core.Agent):
                 self.days = 0
 
     def calculate_contact_rate(self):
-        #Base contact rate for random interactions initially 0.01
-        base_contact_rate = 0.4
+        # === BASE CONTACT RATE (Line 90) ===
+        base_contact_rate = 0.1  # Base contact rate for random interactions
 
         #Calculate the contact rate based on the number of infected neighbors
         infected_count = self.count_infected_neighbors()
@@ -136,8 +134,9 @@ class Person(core.Agent):
 
     def infected(self):
         """Person goes from exposed to either asymptomatic, isolate, or hospitalized"""
+        # CHANGE 4: Use self.days consistently (not days_since_infected)
         incubation = 5
-        if self.days_since_infected >= incubation:
+        if self.days >= incubation:
             asympRate = 0.3  
             isolateRate = 0.55  
             hospitalRate = 0.15 
@@ -156,25 +155,33 @@ class Person(core.Agent):
             
     def asymp(self):
         """Person is asymptomatic and can infect others"""
+        # CHANGE 5: Now properly recovers after 9 days
         if self.days >= 9:
             self.state = self.REMOVED
+            self.days = 0
 
     def hospital(self):
         """Person is currently hospitalized and can either die or recover"""
+        # CHANGE 6: Added recovery for those who don't die
         deathRateHospitalization = 0.18
         daysInHospital = 18
-        if self.days >= daysInHospital:  # Check minimum days first
+        if self.days >= daysInHospital:
             if random.random() < deathRateHospitalization:
                 self.state = self.REMOVED
+            else:
+                self.state = self.REMOVED  # Recovery
+            self.days = 0
 
     def isolated(self):
         """Person is currently isolating and has the chance to recover or become hospitalized"""
+        # CHANGE 7: Added recovery for those who don't get hospitalized
         hospitalizedRate = 0.15
-        if self.days >= 14:  #Check minimum days first
+        if self.days >= 14:
             if random.random() < hospitalizedRate:
                 self.state = self.HOSPITALIZED
             else:
-                self.state = self.REMOVED
+                self.state = self.REMOVED  # Recovery
+            self.days = 0
 
     def remove(self):
         pass
@@ -239,6 +246,8 @@ class Model:
             agent.step()
 
     def run(self, days):
+        data_rows = []
+        rank = self.context.comm.Get_rank()
         for day in range(days):
             for hour in range(24):
                 self.update_locations(hour)  #Handle movement within the day
@@ -246,6 +255,21 @@ class Model:
             counts = self.counts()
             #print(f"Day {day + 1}: {counts}")
             print(f"{day + 1}: {counts},")
+            data_rows.append([
+            day + 1,
+            counts[0],  # S
+            counts[1],  # E
+            counts[2],  # A
+            counts[3],  # H
+            counts[4],  # I
+            counts[5],  # R
+            ])
+        if rank == 0:
+            import csv
+            with open("seahir_sim_data.csv", "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["day","S","E","A","H","I","R"])
+                writer.writerows(data_rows)
 
     def update_locations(self, hour):
         for person in self.context.agents():
